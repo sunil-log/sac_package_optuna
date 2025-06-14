@@ -10,8 +10,7 @@ Created on  Apr 08 2025
 from copy import deepcopy
 
 import numpy as np
-
-from util_sac.dict.jsonl_file_manager import jsonl_file_manager
+from sac_common.sac_dict.jsonl_file_manager import jsonl_file_manager
 
 
 def check_args_integrity(args):

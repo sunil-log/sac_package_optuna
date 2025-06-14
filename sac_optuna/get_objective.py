@@ -11,8 +11,10 @@ from copy import deepcopy
 
 import optuna
 
-from util_sac.dict.merge_dicts import deep_update
 from .session_manager import train_multiple_sessions
+from sac_common.sac_dict.merge_dicts import deep_update
+
+
 
 """
 
