@@ -1,17 +1,14 @@
 # hpo_framework/runner.py
 
 import os
-from typing import Type
+from typing import Callable, Dict, Any
 from copy import deepcopy
 import yaml
 import optuna
 
 from .param_sampler import sample_params
-from .trial_executor import run_trial
-from .base_handler import BaseExperimentHandler
 
-
-def merge_configs(base, new_values):
+def merge_configs(base: Dict[str, Any], new_values: Dict[str, Any]) -> Dict[str, Any]:
     """재귀적으로 딕셔너리를 업데이트하는 유틸리티 함수."""
     for k, v in new_values.items():
         if isinstance(v, dict) and k in base and isinstance(base[k], dict):
@@ -20,13 +17,15 @@ def merge_configs(base, new_values):
             base[k] = v
     return base
 
-def run_hpo(config_path: str, handler_class: Type[BaseExperimentHandler]):
+def run_hpo(config_path: str, session_fn: Callable[[Dict[str, Any]], float]):
     """
     설정 파일을 로드하고 Optuna HPO(Hyperparameter Optimization) 전체 과정을 실행합니다.
 
     Args:
         config_path (str): YAML 설정 파일 경로.
-        handler_class (Type[BaseExperimentHandler]): 사용할 실험 핸들러의 클래스.
+        session_fn (Callable[[Dict[str, Any]], float]):
+            단일 실험 세션을 실행하는 함수. 하이퍼파라미터 딕셔너리를 인자로 받고,
+            최적화할 점수(float)를 반환합니다.
     """
     # 1. 설정 파일 로드
     with open(config_path, 'r') as f:
@@ -41,12 +40,12 @@ def run_hpo(config_path: str, handler_class: Type[BaseExperimentHandler]):
         trial_params = deepcopy(config)
         trial_params = merge_configs(trial_params, {"optimize": optimized_params})
 
-        # 1.3. 핸들러 클래스를 인스턴스화
-        handler = handler_class(trial_params)
+        # 1.3. 프루닝을 위한 콜백 함수를 trial_params에 추가
+        trial_params['trial'] = trial
 
-        # 1.4. 학습 세션 실행 및 점수 반환
+        # 1.4. 사용자가 정의한 세션 함수를 실행하고 점수 반환
         try:
-            score = run_trial(trial, handler)
+            score = session_fn(trial_params)
         except Exception as e:
             print(f"Trial {trial.number} failed with error: {e}")
             # 실패한 trial은 Pruned 처리될 수 있도록 예외를 발생
@@ -57,7 +56,6 @@ def run_hpo(config_path: str, handler_class: Type[BaseExperimentHandler]):
     # 2. Optuna Study 생성 또는 로드
     study_config = config['static']['study']
     db_path = study_config['db_path']
-    # 디렉토리가 존재하지 않으면 생성
     if os.path.dirname(db_path):
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
     storage_name = f"sqlite:///{db_path}"
@@ -67,7 +65,7 @@ def run_hpo(config_path: str, handler_class: Type[BaseExperimentHandler]):
         storage=storage_name,
         load_if_exists=True,
         direction=study_config['direction'],
-        pruner=optuna.pruners.MedianPruner()  # Pruning 알고리즘
+        pruner=optuna.pruners.MedianPruner()
     )
 
     # 3. 최적화 실행
@@ -84,3 +82,4 @@ def run_hpo(config_path: str, handler_class: Type[BaseExperimentHandler]):
     print("Best hyperparameters:")
     for key, value in best_trial.params.items():
         print(f"  - {key}: {value}")
+

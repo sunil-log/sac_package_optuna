@@ -1,97 +1,131 @@
 # experiments/linear_regression.py
 
-from typing import Dict, Tuple, Callable
-
+from typing import Dict, Any
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
-from ignite.metrics import Metric, MeanSquaredError
-import numpy as np
-
-from hpo_framework.base_handler import BaseExperimentHandler
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
 
+# 모델 정의는 그대로 유지
 class LinearRegressionModel(nn.Module):
-    """간단한 선형 회귀 모델"""
-    def __init__(self, input_dim, output_dim):
-        super().__init__()
-        self.linear = nn.Linear(input_dim, output_dim)
+	"""간단한 선형 회귀 모델"""
 
-    def forward(self, x):
-        return self.linear(x)
+	def __init__(self, input_dim, output_dim):
+		super().__init__()
+		self.linear = nn.Linear(input_dim, output_dim)
+
+	def forward(self, x):
+		return self.linear(x)
 
 
-class LinearRegressionHandler(BaseExperimentHandler):
+def single_session(cfg: Dict[str, Any]) -> float:
+	"""
+    단일 하이퍼파라미터 설정(`cfg`)을 사용하여 전체 훈련 및 평가 파이프라인을 실행하고,
+    최적화 대상 점수를 반환합니다.
+
+    Args:
+        cfg (Dict[str, Any]): 정적 파라미터와 샘플링된 하이퍼파라미터를 포함하는 딕셔너리.
+
+    Returns:
+        float: 검증 데이터셋에 대한 최종 MSE 점수.
     """
-    선형 회귀 실험을 위한 구체적인 핸들러 구현.
-    BaseExperimentHandler의 모든 추상 메서드를 구현합니다.
-    """
+	# --- 1. 설정값 추출 ---
+	trial = cfg['trial']  # Optuna trial 객체
+	static_params = cfg['static']
+	optim_params = cfg['optimize']
 
-    def get_model(self) -> nn.Module:
-        model_args = self.params['static']['model']
-        return LinearRegressionModel(
-            input_dim=model_args['input_dim'],
-            output_dim=model_args['output_dim']
-        )
+	device = torch.device(static_params['device'])
 
-    def get_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
-        data_args = self.params['static']['data']
-        batch_size = self.params['optimize']['training']['batch_size']
+	# 데이터 관련 설정
+	data_args = static_params['data']
+	n_samples = data_args['n_samples']
+	n_features = data_args['n_features']
 
-        X = np.random.randn(data_args['n_samples'], data_args['n_features']).astype(np.float32)
-        true_weights = np.random.randn(data_args['n_features'], 1).astype(np.float32)
-        true_bias = np.random.randn(1).astype(np.float32)
-        y = (X @ true_weights + true_bias + np.random.randn(data_args['n_samples'], 1) * data_args['noise']).astype(np.float32)
+	# 모델 관련 설정
+	model_args = static_params['model']
 
-        X_tensor = torch.from_numpy(X)
-        y_tensor = torch.from_numpy(y)
+	# 훈련 관련 설정
+	training_args = optim_params['training']
+	lr = training_args['lr']
+	batch_size = training_args['batch_size']
+	max_epochs = training_args['max_epochs']
 
-        split_idx = int(data_args['n_samples'] * data_args['train_split'])
-        train_dataset = TensorDataset(X_tensor[:split_idx], y_tensor[:split_idx])
-        val_dataset = TensorDataset(X_tensor[split_idx:], y_tensor[split_idx:])
+	# 옵티마이저 관련 설정
+	optimizer_args = optim_params['optimizer']
+	optimizer_name = optimizer_args['optimizer_name']
 
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-        return train_loader, val_loader
+	# --- 2. 데이터 준비 ---
+	X = np.random.randn(n_samples, n_features).astype(np.float32)
+	true_weights = np.random.randn(n_features, 1).astype(np.float32)
+	true_bias = np.random.randn(1).astype(np.float32)
+	y = (X @ true_weights + true_bias + np.random.randn(n_samples, 1) * data_args['noise']).astype(np.float32)
 
-    def get_optimizer(self, model: nn.Module) -> torch.optim.Optimizer:
-        optimizer_name = self.params['optimize']['optimizer']['optimizer_name']
-        lr = self.params['optimize']['training']['lr']
+	X_tensor = torch.from_numpy(X)
+	y_tensor = torch.from_numpy(y)
+	dataset = TensorDataset(X_tensor, y_tensor)
 
-        if optimizer_name == "Adam":
-            return torch.optim.Adam(model.parameters(), lr=lr)
-        elif optimizer_name == "RMSprop":
-            return torch.optim.RMSprop(model.parameters(), lr=lr)
-        elif optimizer_name == "SGD":
-            momentum = self.params['optimize']['optimizer']['sgd_momentum']
-            return torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
-        else:
-            raise ValueError(f"Unknown optimizer: {optimizer_name}")
+	train_size = int(data_args['train_split'] * len(dataset))
+	val_size = len(dataset) - train_size
+	train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-    def get_loss_fn(self) -> Callable:
-        return nn.MSELoss()
+	train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+	val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    def get_metrics(self) -> Dict[str, Metric]:
-        # config.yaml의 'metric_to_optimize'에 지정된 'val_mse'를 키로 사용
-        return {"val_mse": MeanSquaredError()}
+	# --- 3. 모델, 손실함수, 옵티마이저 생성 ---
+	model = LinearRegressionModel(
+		input_dim=model_args['input_dim'],
+		output_dim=model_args['output_dim']
+	).to(device)
 
-    def get_train_step_fn(self, model: nn.Module, optimizer: torch.optim.Optimizer, loss_fn: Callable) -> Callable:
-        def train_step(engine, batch):
-            model.train()
-            optimizer.zero_grad()
-            x, y = batch[0].to(self.device), batch[1].to(self.device)
-            y_pred = model(x)
-            loss = loss_fn(y_pred, y)
-            loss.backward()
-            optimizer.step()
-            return loss.item()
-        return train_step
+	loss_fn = nn.MSELoss()
 
-    def get_eval_step_fn(self, model: nn.Module) -> Callable:
-        def eval_step(engine, batch):
-            model.eval()
-            with torch.no_grad():
-                x, y = batch[0].to(self.device), batch[1].to(self.device)
-                y_pred = model(x)
-            return y_pred, y
-        return eval_step
+	if optimizer_name == "Adam":
+		optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+	elif optimizer_name == "RMSprop":
+		optimizer = torch.optim.RMSprop(model.parameters(), lr=lr)
+	elif optimizer_name == "SGD":
+		momentum = optimizer_args['sgd_momentum']
+		optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+	else:
+		raise ValueError(f"Unknown optimizer: {optimizer_name}")
+
+	# --- 4. 훈련 및 검증 루프 실행 ---
+	print(f"\n--- Trial {trial.number}: Starting ---")
+	print(f"Params: {trial.params}")
+
+	for epoch in range(max_epochs):
+		# 훈련
+		model.train()
+		for x_batch, y_batch in train_loader:
+			x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+
+			optimizer.zero_grad()
+			y_pred = model(x_batch)
+			loss = loss_fn(y_pred, y_batch)
+			loss.backward()
+			optimizer.step()
+
+		# 검증
+		model.eval()
+		val_loss = 0
+		with torch.no_grad():
+			for x_val, y_val in val_loader:
+				x_val, y_val = x_val.to(device), y_val.to(device)
+				y_pred_val = model(x_val)
+				val_loss += loss_fn(y_pred_val, y_val).item()
+
+		avg_val_loss = val_loss / len(val_loader)
+		print(f"Trial {trial.number} - Epoch {epoch + 1}/{max_epochs} - Val MSE: {avg_val_loss:.4f}")
+
+		# Optuna Pruning
+		trial.report(avg_val_loss, epoch)
+		if trial.should_prune():
+			print(f"Trial {trial.number} pruned at epoch {epoch + 1}.")
+			raise optuna.exceptions.TrialPruned()
+
+	print(f"--- Trial {trial.number}: Finished. Final Val MSE: {avg_val_loss:.4f} ---")
+
+	# --- 5. 최종 점수 반환 ---
+	# Optuna는 이 반환값을 사용하여 하이퍼파라미터를 최적화합니다.
+	return avg_val_loss
