@@ -1,60 +1,58 @@
 # ===================================================================
 # 실험을 위한 정적 파라미터 (Static Parameters)
-# - 이 값들은 Optuna 최적화 과정에서 변경되지 않습니다.
 # ===================================================================
 static:
   # 데이터셋 관련 설정
   data:
-    n_samples: 1000   # 생성할 총 샘플 개수
-    n_features: 5     # 입력 피처(feature)의 수
-    noise: 0.1        # 데이터에 추가할 노이즈의 표준편차
-    train_split: 0.8  # 훈련 세트가 전체 데이터에서 차지하는 비율
+    n_samples: 1000
+    n_features: 5
+    noise: 0.1
+    train_split: 0.8
 
   # 모델 아키텍처 관련 설정
   model:
-    input_dim: 5      # 모델의 입력 차원 (n_features와 동일해야 함)
-    output_dim: 1     # 모델의 출력 차원
+    input_dim: 5
+    output_dim: 1
 
   # Optuna Study 관련 설정
   study:
-    study_name: "linear_regression_optimization" # Optuna Study의 이름
-    db_path: "./optuna_study.db"                 # 결과를 저장할 SQLite 데이터베이스 경로
-    n_trials: 50                                 # 총 시도할 Trial의 수
-    direction: "minimize"                        # 최적화 방향 ('minimize' 또는 'maximize')
+    study_name: "general_optimization_framework"
+    db_path: "./optuna_study.db"
+    n_trials: 50
+    # 최적화할 평가지표의 이름을 명시합니다.
+    # 이 이름은 ExperimentHandler의 get_metrics()가 반환하는 dict의 key와 일치해야 합니다.
+    metric_to_optimize: "val_mse"
+    direction: "minimize" # 'minimize' 또는 'maximize'
 
   # 실행 환경 설정
-  device: "cpu"       # 학습에 사용할 장치 ('cuda' 또는 'cpu')
-
+  device: "cpu"
 
 # ===================================================================
 # Optuna를 통해 최적화할 하이퍼파라미터 (Optimization Hyperparameters)
-# - 각 파라미터의 탐색 공간을 정의합니다.
 # ===================================================================
 optimize:
   # 학습 관련 하이퍼파라미터
   training:
     lr:
-      type: "float"   # 데이터 타입
-      low: 1.0e-4     # 탐색 범위의 최솟값
-      high: 1.0e-1    # 탐색 범위의 최댓값
-      log: true       # 로그 스케일로 탐색할지 여부
-
+      type: "float"
+      low: 1.0e-4
+      high: 1.0e-1
+      log: true
     batch_size:
-      type: "categorical" # 범주형 데이터 타입
-      choices: [16, 32, 64, 128] # 탐색할 값들의 목록
-
+      type: "categorical"
+      choices: [16, 32, 64, 128]
     max_epochs:
-      type: "int"     # 정수형 데이터 타입
-      low: 5          # 탐색 범위의 최솟값
-      high: 30        # 탐색 범위의 최댓값
+      type: "int"
+      low: 5
+      high: 30
 
   # 옵티마이저 관련 하이퍼파라미터
   optimizer:
     optimizer_name:
       type: "categorical"
-      choices: ["Adam", "RMSprop", "SGD"] # 탐색할 옵티마이저 종류
-
-    sgd_momentum: # SGD 옵티마이저를 선택했을 때만 사용될 파라미터
+      choices: ["Adam", "RMSprop", "SGD"]
+    # SGD 옵티마이저를 선택했을 때만 사용될 파라미터
+    sgd_momentum:
       type: "float"
       low: 0.8
       high: 0.99
