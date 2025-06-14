@@ -6,8 +6,9 @@ Created on  Apr 09 2025
 @author: sac
 """
 
-import optuna
 from typing import List, Dict
+
+import optuna
 
 from .get_objective import get_objective
 from .session_manager import train_multiple_sessions
