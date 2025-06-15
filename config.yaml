@@ -19,10 +19,14 @@ static:
     study_name: "general_optimization_framework"
     db_path: "./optuna_study.db"
     n_trials: 50
-    # 최적화할 평가지표의 이름을 명시합니다.
-    # 이 이름은 ExperimentHandler의 get_metrics()가 반환하는 dict의 key와 일치해야 합니다.
-    metric_to_optimize: "val_mse"
     direction: "minimize" # 'minimize' 또는 'maximize'
+    # Pruner 설정을 추가합니다. type에 'None'을 지정하면 Pruning을 비활성화합니다.
+    pruner:
+      type: "MedianPruner" # MedianPruner, HyperbandPruner, None 등
+      # 각 Pruner에 필요한 인자들을 여기에 추가할 수 있습니다.
+      # 예시:
+      # n_startup_trials: 5
+      # n_warmup_steps: 4
 
   # 실행 환경 설정
   device: "cpu"

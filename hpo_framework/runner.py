@@ -8,6 +8,33 @@ import optuna
 
 from .param_sampler import sample_params
 
+class DotDict(dict):
+    """
+    점(.) 표기법으로 접근 가능한 딕셔너리 클래스.
+    중첩된 딕셔너리도 재귀적으로 변환합니다.
+    """
+    def __init__(self, *args, **kwargs):
+        super(DotDict, self).__init__(*args, **kwargs)
+        for key, value in self.items():
+            if isinstance(value, dict):
+                self[key] = DotDict(value)
+
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(f"'DotDict' object has no attribute '{key}'")
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
+    def __delattr__(self, key):
+        try:
+            del self[key]
+        except KeyError:
+            raise AttributeError(f"'DotDict' object has no attribute '{key}'")
+
+
 def merge_configs(base: Dict[str, Any], new_values: Dict[str, Any]) -> Dict[str, Any]:
     """재귀적으로 딕셔너리를 업데이트하는 유틸리티 함수."""
     for k, v in new_values.items():
@@ -16,6 +43,21 @@ def merge_configs(base: Dict[str, Any], new_values: Dict[str, Any]) -> Dict[str,
         else:
             base[k] = v
     return base
+
+def _create_pruner(config: Dict[str, Any]) -> optuna.pruners.BasePruner:
+    """설정 파일에 기반하여 Pruner 객체를 생성합니다."""
+    pruner_type = config.get("type", "MedianPruner").lower()
+    pruner_args = {k: v for k, v in config.items() if k != "type"}
+
+    if pruner_type == "medianpruner":
+        return optuna.pruners.MedianPruner(**pruner_args)
+    elif pruner_type == "hyperbandpruner":
+        return optuna.pruners.HyperbandPruner(**pruner_args)
+    elif pruner_type == "none" or pruner_type is None:
+        return optuna.pruners.NopPruner() # Pruning을 수행하지 않음
+    else:
+        raise ValueError(f"지원하지 않는 Pruner 타입입니다: {config.get('type')}")
+
 
 def run_hpo(config_path: str, session_fn: Callable[[Dict[str, Any]], float]):
     """
@@ -39,17 +81,20 @@ def run_hpo(config_path: str, session_fn: Callable[[Dict[str, Any]], float]):
         # 1.2. static 설정과 결합하여 최종 trial_params 생성
         trial_params = deepcopy(config)
         trial_params = merge_configs(trial_params, {"optimize": optimized_params})
-
-        # 1.3. 프루닝을 위한 콜백 함수를 trial_params에 추가
         trial_params['trial'] = trial
 
-        # 1.4. 사용자가 정의한 세션 함수를 실행하고 점수 반환
+        # 1.3. 사용자가 정의한 세션 함수를 실행하고 점수 반환
         try:
-            score = session_fn(trial_params)
+            # session_fn에 전달하기 직전, DotDict으로 감싸줍니다.
+            score = session_fn(DotDict(trial_params))
+        except optuna.exceptions.TrialPruned as e:
+            # Pruning으로 인한 예외는 그대로 다시 발생시켜 Optuna가 처리하도록 합니다.
+            raise e
         except Exception as e:
-            print(f"Trial {trial.number} failed with error: {e}")
-            # 실패한 trial은 Pruned 처리될 수 있도록 예외를 발생
-            raise optuna.exceptions.TrialPruned()
+            # 그 외 모든 예외는 에러로 기록하고 trial을 실패(FAILED) 상태로 만듭니다.
+            print(f"Trial {trial.number} failed with an unexpected error: {e}")
+            # 예외를 다시 발생시켜 Optuna가 trial을 FAILED로 처리하도록 합니다.
+            raise e
 
         return score
 
@@ -60,12 +105,14 @@ def run_hpo(config_path: str, session_fn: Callable[[Dict[str, Any]], float]):
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
     storage_name = f"sqlite:///{db_path}"
 
+    pruner = _create_pruner(study_config.get("pruner", {}))
+
     study = optuna.create_study(
         study_name=study_config['study_name'],
         storage=storage_name,
         load_if_exists=True,
         direction=study_config['direction'],
-        pruner=optuna.pruners.MedianPruner()
+        pruner=pruner
     )
 
     # 3. 최적화 실행
@@ -76,10 +123,14 @@ def run_hpo(config_path: str, session_fn: Callable[[Dict[str, Any]], float]):
     print(f"Study: {study.study_name}")
     print(f"Number of finished trials: {len(study.trials)}")
 
-    best_trial = study.best_trial
-    print(f"Best trial value: {best_trial.value:.5f}")
+    # 실패하지 않은 trial 중에서 최적의 결과를 찾습니다.
+    try:
+        best_trial = study.best_trial
+        print(f"Best trial value: {best_trial.value:.5f}")
 
-    print("Best hyperparameters:")
-    for key, value in best_trial.params.items():
-        print(f"  - {key}: {value}")
+        print("Best hyperparameters:")
+        for key, value in best_trial.params.items():
+            print(f"  - {key}: {value}")
+    except ValueError:
+        print("모든 Trial이 실패하여 최적의 하이퍼파라미터를 찾을 수 없습니다.")
 

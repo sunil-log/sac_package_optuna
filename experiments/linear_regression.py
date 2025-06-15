@@ -1,11 +1,15 @@
 # experiments/linear_regression.py
 
-from typing import Dict, Any
+from typing import Dict, Any, TYPE_CHECKING
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, random_split
+import optuna
 
+# 순환 참조를 피하면서 타입 힌트를 사용하기 위한 기법
+if TYPE_CHECKING:
+    from hpo_framework.runner import DotDict
 
 # 모델 정의는 그대로 유지
 class LinearRegressionModel(nn.Module):
@@ -19,53 +23,52 @@ class LinearRegressionModel(nn.Module):
 		return self.linear(x)
 
 
-def single_session(cfg: Dict[str, Any]) -> float:
+def single_session(cfg: "DotDict") -> float:
 	"""
 	단일 하이퍼파라미터 설정(`cfg`)을 사용하여 전체 훈련 및 평가 파이프라인을 실행하고,
 	최적화 대상 점수를 반환합니다.
 
 	Args:
-		cfg (Dict[str, Any]): 정적 파라미터와 샘플링된 하이퍼파라미터를 포함하는 딕셔너리.
+		cfg (DotDict): 정적 파라미터와 샘플링된 하이퍼파라미터를 포함하는 객체.
+                       점(.) 표기법으로 접근 가능합니다.
 
 	Returns:
 		float: 검증 데이터셋에 대한 최종 MSE 점수.
 	"""
-	# --- 1. 설정값 추출 ---
-	trial = cfg['trial']  # Optuna trial 객체
-	static_params = cfg['static']
-	optim_params = cfg['optimize']
+	# --- 1. 설정값 추출 (점 표기법 사용) ---
+	trial = cfg.trial  # Optuna trial 객체
 
-	device = torch.device(static_params['device'])
+	device = torch.device(cfg.static.device)
 
 	# 데이터 관련 설정
-	data_args = static_params['data']
-	n_samples = data_args['n_samples']
-	n_features = data_args['n_features']
+	data_args = cfg.static.data
+	n_samples = data_args.n_samples
+	n_features = data_args.n_features
 
 	# 모델 관련 설정
-	model_args = static_params['model']
+	model_args = cfg.static.model
 
 	# 훈련 관련 설정
-	training_args = optim_params['training']
-	lr = training_args['lr']
-	batch_size = training_args['batch_size']
-	max_epochs = training_args['max_epochs']
+	training_args = cfg.optimize.training
+	lr = training_args.lr
+	batch_size = training_args.batch_size
+	max_epochs = training_args.max_epochs
 
 	# 옵티마이저 관련 설정
-	optimizer_args = optim_params['optimizer']
-	optimizer_name = optimizer_args['optimizer_name']
+	optimizer_args = cfg.optimize.optimizer
+	optimizer_name = optimizer_args.optimizer_name
 
 	# --- 2. 데이터 준비 ---
 	X = np.random.randn(n_samples, n_features).astype(np.float32)
 	true_weights = np.random.randn(n_features, 1).astype(np.float32)
 	true_bias = np.random.randn(1).astype(np.float32)
-	y = (X @ true_weights + true_bias + np.random.randn(n_samples, 1) * data_args['noise']).astype(np.float32)
+	y = (X @ true_weights + true_bias + np.random.randn(n_samples, 1) * data_args.noise).astype(np.float32)
 
 	X_tensor = torch.from_numpy(X)
 	y_tensor = torch.from_numpy(y)
 	dataset = TensorDataset(X_tensor, y_tensor)
 
-	train_size = int(data_args['train_split'] * len(dataset))
+	train_size = int(data_args.train_split * len(dataset))
 	val_size = len(dataset) - train_size
 	train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
@@ -74,8 +77,8 @@ def single_session(cfg: Dict[str, Any]) -> float:
 
 	# --- 3. 모델, 손실함수, 옵티마이저 생성 ---
 	model = LinearRegressionModel(
-		input_dim=model_args['input_dim'],
-		output_dim=model_args['output_dim']
+		input_dim=model_args.input_dim,
+		output_dim=model_args.output_dim
 	).to(device)
 
 	loss_fn = nn.MSELoss()
@@ -85,7 +88,7 @@ def single_session(cfg: Dict[str, Any]) -> float:
 	elif optimizer_name == "RMSprop":
 		optimizer = torch.optim.RMSprop(model.parameters(), lr=lr)
 	elif optimizer_name == "SGD":
-		momentum = optimizer_args['sgd_momentum']
+		momentum = optimizer_args.sgd_momentum
 		optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
 	else:
 		raise ValueError(f"Unknown optimizer: {optimizer_name}")
