@@ -21,15 +21,15 @@ class LinearRegressionModel(nn.Module):
 
 def single_session(cfg: Dict[str, Any]) -> float:
 	"""
-    단일 하이퍼파라미터 설정(`cfg`)을 사용하여 전체 훈련 및 평가 파이프라인을 실행하고,
-    최적화 대상 점수를 반환합니다.
+	단일 하이퍼파라미터 설정(`cfg`)을 사용하여 전체 훈련 및 평가 파이프라인을 실행하고,
+	최적화 대상 점수를 반환합니다.
 
-    Args:
-        cfg (Dict[str, Any]): 정적 파라미터와 샘플링된 하이퍼파라미터를 포함하는 딕셔너리.
+	Args:
+		cfg (Dict[str, Any]): 정적 파라미터와 샘플링된 하이퍼파라미터를 포함하는 딕셔너리.
 
-    Returns:
-        float: 검증 데이터셋에 대한 최종 MSE 점수.
-    """
+	Returns:
+		float: 검증 데이터셋에 대한 최종 MSE 점수.
+	"""
 	# --- 1. 설정값 추출 ---
 	trial = cfg['trial']  # Optuna trial 객체
 	static_params = cfg['static']
