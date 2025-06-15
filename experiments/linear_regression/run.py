@@ -1,4 +1,4 @@
-# experiments/linear_regression.py
+# experiments/run.py
 
 from typing import Dict, Any, TYPE_CHECKING
 import numpy as np

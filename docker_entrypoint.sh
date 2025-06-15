@@ -35,7 +35,10 @@ echo "Updated PYTHONPATH: $PYTHONPATH"
 # Execution  
 # ================  
   
-cd /sac/src  
+# cd /sac/src
+cd /sac
   
 # 메인 스크립트 실행  
-python run_main.py
+# python run_experiment.py --experiment_name linear_regression
+python run_experiment.py --experiment_name mlp_classifier
+

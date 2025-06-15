@@ -1,0 +1,48 @@
+# ===================================================================
+# MLP 분류기 실험을 위한 정적 파라미터 (Static Parameters)
+# ===================================================================
+static:
+  data:
+    n_samples: 2000
+    n_informative: 5  # 분류에 영향을 주는 feature 수
+    train_split: 0.8
+  model:
+    input_dim: 10     # n_features와 동일해야 함
+    hidden_dim: 128
+    output_dim: 1     # 이진 분류
+  study:
+    study_name: "mlp_classification_optimization"
+    db_path: "./optuna_study_mlp.db"
+    n_trials: 30
+    direction: "minimize" # validation loss를 최소화
+    pruner:
+      type: "MedianPruner"
+      n_startup_trials: 5
+      n_warmup_steps: 3
+  device: "cpu"
+
+# ===================================================================
+# Optuna를 통해 최적화할 하이퍼파라미터 (Optimization Hyperparameters)
+# ===================================================================
+optimize:
+  training:
+    lr:
+      type: "float"
+      low: 1.0e-5
+      high: 1.0e-2
+      log: true
+    batch_size:
+      type: "categorical"
+      choices: [32, 64, 128]
+    max_epochs:
+      type: "int"
+      low: 10
+      high: 50
+    dropout_rate:
+      type: "float"
+      low: 0.1
+      high: 0.5
+  optimizer:
+    optimizer_name:
+      type: "categorical"
+      choices: ["Adam", "RMSprop", "AdamW"]
